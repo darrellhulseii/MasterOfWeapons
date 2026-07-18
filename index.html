@@ -171,6 +171,16 @@
     user-select:none; touch-action:none; z-index:5;
   }
   #attack-btn.held{ border-color:var(--mana); box-shadow:0 0 18px var(--mana); }
+  #special-btn{
+    display:none; position:absolute; right:26px; bottom:190px;
+    width:72px; height:72px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, var(--stone-light), var(--stone-dark));
+    border:3px solid var(--exp-gold); box-shadow:0 3px 10px rgba(0,0,0,0.7);
+    font-size:28px; align-items:center; justify-content:center; flex-direction:column;
+    user-select:none; touch-action:none; z-index:5;
+  }
+  #special-btn.disabled{ opacity:0.4; border-color:var(--stone-light); }
+  #special-btn .spcd{ font-size:10px; color:var(--exp-gold); margin-top:-4px; }
   #pause-btn{
     position:absolute; top:118px; right:10px;
     width:44px; height:44px; border-radius:50%;
@@ -184,6 +194,7 @@
   /* Touch devices: bigger tap targets, no iOS focus-zoom, touch hint */
   @media (pointer:coarse){
     #attack-btn{ display:flex; }
+    #special-btn{ display:flex; }
     .wslot{ width:64px; height:64px; }
     .wslot .icon{ font-size:24px; }
     .wslot .lbl{ font-size:8px; }
@@ -274,6 +285,7 @@ window.addEventListener('unhandledrejection', function(e){
   <div id="stage-banner"><div class="t1" id="stage-b1">STAGE 1</div><div class="t2" id="stage-b2">Shire Grassland</div></div>
 
   <div id="attack-btn">⚔️</div>
+  <div id="special-btn"><span id="sp-icon">✨</span><span class="spcd" id="sp-cd"></span></div>
   <div id="pause-btn">⏸</div>
 
   <div class="overlay" id="pause-overlay">
@@ -283,7 +295,7 @@ window.addEventListener('unhandledrejection', function(e){
       <div class="btn" id="pause-resume">RESUME</div>
       <div class="btn" id="pause-sound">SOUND: ON</div>
       <div class="btn" id="pause-music">MUSIC: ON</div>
-      <div class="btn" id="pause-restart">RESTART RUN</div>
+      <div class="btn" id="pause-quit">QUIT TO TITLE</div>
       <div class="sub" id="pause-controls"></div>
     </div>
   </div>
@@ -317,6 +329,7 @@ window.addEventListener('unhandledrejection', function(e){
   <div class="overlay" id="victory">
     <h1>THE REALM IS AT PEACE</h1>
     <p id="v-stats"></p>
+    <div class="btn" id="v-endless">⚔️ ENTER ENDLESS MODE</div>
     <div class="btn" id="v-restart">PLAY AGAIN</div>
   </div>
 
@@ -417,6 +430,7 @@ const SFX = {
   hurt(){ this.tone(140,60,0.25,'sawtooth',0.18); },
   buy(){ this.tone(660,990,0.12,'square',0.13); },
   boss(){ this.tone(110,55,0.8,'sawtooth',0.2); },
+  special(){ this.tone(330,990,0.3,'square',0.16); },
 };
 window.addEventListener('pointerdown', ()=>SFX.ensure());
 window.addEventListener('keydown', ()=>SFX.ensure());
@@ -642,6 +656,9 @@ let keys = {};
 let mouse = {x:W/2, y:H/2, down:false};
 let gameState = 'start'; // start | playing | stageClear | shop | gameover | victory
 let stageIndex = 1, stageKills = 0, bossSpawned = false, spawnTimer = 0;
+let endlessMode = false, endlessWave = 0, score = 0, bestScore = 0;
+function endlessScale(){ return endlessMode ? 1 + endlessWave*0.18 : 1; }
+function currentQuota(){ return endlessMode ? 16 + endlessWave*2 : STAGES[stageIndex-1].quota; }
 let bossBannerT = 0, levelUpT = 0, stageBannerT = 0;
 let elapsedGlobal = 0;
 
@@ -661,6 +678,7 @@ function newPlayer(){
     charging:false, chargeT:0,
     weaponLevels:{},
     hpMult:1, relics:[], relicClaimed:new Set(), trained:0,
+    specialCd:0,
   };
 }
 
@@ -757,6 +775,7 @@ function resetGame(){
   player.maxHp = d.maxHp; player.hp = d.maxHp;
   player.maxMp = d.maxMp; player.mp = d.maxMp;
   selectedWeaponIdx = 0;
+  endlessMode = false; endlessWave = 0; score = 0;
   startPickIdx = 0;
   hideAllOverlays();
   buildWeaponBar();
@@ -765,6 +784,11 @@ function resetGame(){
   showStartScreen();
 }
 
+document.getElementById('v-endless').addEventListener('click', ()=>{
+  hideAllOverlays();
+  endlessMode = true; endlessWave = 0; score = 0;
+  startEndlessWave();
+});
 function showStartScreen(){
   gameState = 'start';
   MUSIC.stop();
@@ -815,7 +839,7 @@ function startStage(idx){
   spawnTimer = 0.5;
   stageBannerT = 2.6;
   MUSIC.start('calm');
-  document.getElementById('stage-b1').textContent = `STAGE ${idx} / 15`;
+  document.getElementById('stage-b1').textContent = endlessMode ? `WAVE ${endlessWave}` : `STAGE ${idx} / 15`;
   document.getElementById('stage-b2').textContent = st.name;
   hideAllOverlays();
   syncHud();
@@ -841,7 +865,7 @@ function spawnFodder(){
   const pool = ENEMY_TYPES.filter(e=> e.tier <= st.tier && e.tier >= Math.max(1, st.tier-2));
   const def = choice(pool.length? pool : ENEMY_TYPES.filter(e=>e.tier===1));
   const b = TIER_BASE[def.tier];
-  const scale = 1 + (stageIndex-1)*0.07;
+  const scale = (1 + (stageIndex-1)*0.07) * endlessScale();
   const side = randi(0,3);
   let x,y;
   if(side===0){ x=-30; y=rand(0,H); } else if(side===1){ x=W+30; y=rand(0,H); }
@@ -858,9 +882,10 @@ function spawnFodder(){
 
 function spawnBoss(){
   const bdef = BOSS_TYPES[stageIndex-1];
-  const hp = Math.round(300 + stageIndex*130);
-  const atk = Math.round(15 + stageIndex*3.2);
-  const defn = Math.round(6 + stageIndex*1.6);
+  const es = endlessScale();
+  const hp = Math.round((300 + stageIndex*130)*es);
+  const atk = Math.round((15 + stageIndex*3.2)*es);
+  const defn = Math.round((6 + stageIndex*1.6)*es);
   const size = 40 + stageIndex*1.6;
   entities.push({
     def: Object.assign({size, ranged:(bdef.shape==='flyer'||stageIndex%2===0)}, bdef),
@@ -883,24 +908,46 @@ function completeStage(){
   MUSIC.start('calm');
   document.getElementById('boss-hpbar').style.display = 'none';
   const st = STAGES[stageIndex-1];
-  const goldReward = 40 + stageIndex*15;
-  const expReward = 60 + stageIndex*20;
+  let goldReward, expReward;
+  if(endlessMode){
+    score += 500 + endlessWave*100;
+    bestScore = Math.max(bestScore, score);
+    goldReward = 60 + endlessWave*20;
+    expReward = 80 + endlessWave*30;
+    document.getElementById('sc-name').textContent = `Wave ${endlessWave} survived!`;
+  } else {
+    goldReward = 40 + stageIndex*15;
+    expReward = 60 + stageIndex*20;
+    document.getElementById('sc-name').textContent = `${st.name} has been cleared!`;
+  }
   player.gold += goldReward;
   gainExp(expReward);
-  document.getElementById('sc-name').textContent = `${st.name} has been cleared!`;
-  document.getElementById('sc-reward').textContent = `+${goldReward} gold  ·  +${expReward} exp`;
+  document.getElementById('sc-reward').textContent = `+${goldReward} gold  ·  +${expReward} exp` + (endlessMode ? `  ·  Score ${score}` : '');
   document.getElementById('stageclear').style.display = 'flex';
 }
 
 function proceedAfterStageClear(){
   hideAllOverlays();
-  if(stageIndex >= 15){ showVictory(); return; }
-  if(RELIC_STAGES.has(stageIndex) && !player.relicClaimed.has(stageIndex)){ showRelicPick(); return; }
+  if(!endlessMode && stageIndex >= 15){ showVictory(); return; }
+  const relicDue = endlessMode
+    ? (endlessWave % 5 === 0 && !player.relicClaimed.has('e'+endlessWave) && player.relics.length < RELICS.length)
+    : (RELIC_STAGES.has(stageIndex) && !player.relicClaimed.has(stageIndex));
+  if(relicDue){ showRelicPick(); return; }
   afterRelicFlow();
 }
 function afterRelicFlow(){
+  if(endlessMode){
+    if(endlessWave % 3 === 0){ openShop(); }
+    else { startEndlessWave(); }
+    return;
+  }
   if(SHOP_STAGES.has(stageIndex)){ openShop(); }
   else { startStage(stageIndex+1); }
+}
+function startEndlessWave(){
+  endlessWave++;
+  const idx = ((endlessWave-1) % 15) + 1;
+  startStage(idx);
 }
 function showRelicPick(){
   gameState = 'relic';
@@ -916,7 +963,7 @@ function showRelicPick(){
     el.innerHTML = `<div class="picon">${r.icon}</div><div class="pname">${r.name}</div><div class="pelem">${r.desc}</div>`;
     el.addEventListener('click', ()=>{
       player.relics.push(r.id);
-      player.relicClaimed.add(stageIndex);
+      player.relicClaimed.add(endlessMode ? 'e'+endlessWave : stageIndex);
       recalcVitals();
       refreshCharSheet(); refreshHud();
       SFX.level();
@@ -990,7 +1037,8 @@ function renderShop(eq){
   });
   const fWrap = document.getElementById('shop-forge');
   fWrap.innerHTML = '';
-  WEAPONS.forEach(w=>{
+  {
+    const w = WEAPONS[selectedWeaponIdx];
     const wl = player.weaponLevels[w.id];
     const cost = forgeCost(wl.level);
     const row = document.createElement('div');
@@ -998,7 +1046,7 @@ function renderShop(eq){
     row.innerHTML = `<div>${w.icon} ${w.name}<div class="desc">Lv${wl.level} → Lv${wl.level+1} · +7% damage per level</div></div>
       <div class="buybtn ${player.gold<cost?'disabled':''}" data-fkey="${w.id}">${cost}g</div>`;
     fWrap.appendChild(row);
-  });
+  }
   const tWrap = document.getElementById('shop-training');
   tWrap.innerHTML = '';
   const STAT_INFO = {str:'melee dmg', dex:'ranged/crit', int:'magic/MP', luk:'crit/rare', vit:'HP/DEF'};
@@ -1076,7 +1124,8 @@ document.getElementById('shop-overlay').addEventListener('click', e=>{
 });
 document.getElementById('shop-continue').addEventListener('click', ()=>{
   hideAllOverlays();
-  startStage(stageIndex+1);
+  if(endlessMode){ startEndlessWave(); }
+  else { startStage(stageIndex+1); }
 });
 document.getElementById('sc-continue').addEventListener('click', proceedAfterStageClear);
 document.getElementById('restart-btn').addEventListener('click', resetGame);
@@ -1091,11 +1140,11 @@ window.addEventListener('keydown', e=>{
   }
   const k = e.key.toLowerCase();
   keys[k] = true;
-  if(['1','2','3','4','5','6'].includes(e.key)){ selectedWeaponIdx = parseInt(e.key)-1; buildWeaponBar(); }
   if(k==='c'){
     const sheet = document.getElementById('char-sheet');
     sheet.style.display = sheet.style.display==='block' ? 'none' : 'block';
   }
+  if(k==='f'){ doSpecial(); }
   if(k==='q'){ useItem('potion'); }
   if(k==='e'){ useItem('ether'); }
   if(k==='p' || e.key==='Escape'){ setPaused(gameState!=='paused'); }
@@ -1117,7 +1166,7 @@ canvas.addEventListener('mouseup', ()=>{ mouse.down = false; releaseCharge(); })
 
 //////////////////////// TOUCH CONTROLS ////////////////////////
 // Left half of canvas = virtual joystick (move). Right half = aim + hold to charge, release to attack.
-const touch = { move:{x:0,y:0}, joyId:null, joyOx:0, joyOy:0, joyX:0, joyY:0, aimId:null };
+const touch = { move:{x:0,y:0}, joyId:null, joyOx:0, joyOy:0, joyX:0, joyY:0, aimId:null, aimOx:0, aimOy:0, aimX:0, aimY:0 };
 function canvasPos(e){
   const rect = canvas.getBoundingClientRect();
   return { x:(e.clientX-rect.left)*(W/rect.width), y:(e.clientY-rect.top)*(H/rect.height) };
@@ -1132,8 +1181,11 @@ canvas.addEventListener('pointerdown', e=>{
     touch.joyX = p.x; touch.joyY = p.y;
     touch.move.x = 0; touch.move.y = 0;
   } else if(touch.aimId===null){
+    // right joystick: drag sets aim direction, hold charges, release strikes
     touch.aimId = e.pointerId;
-    mouse.x = p.x; mouse.y = p.y;
+    touch.aimOx = p.x; touch.aimOy = p.y;
+    touch.aimX = p.x; touch.aimY = p.y;
+    mouse.x = p.x; mouse.y = p.y; // default aim toward touch until dragged
     startCharge();
   }
 }, {passive:false});
@@ -1149,7 +1201,14 @@ canvas.addEventListener('pointermove', e=>{
     if(len > dead){ touch.move.x = dx/len; touch.move.y = dy/len; }
     else { touch.move.x = 0; touch.move.y = 0; }
   } else if(e.pointerId === touch.aimId){
-    mouse.x = p.x; mouse.y = p.y;
+    const dx = p.x - touch.aimOx, dy = p.y - touch.aimOy;
+    const len = Math.hypot(dx,dy), dead = 10, maxR = 46;
+    touch.aimX = touch.aimOx + (len>maxR ? dx/len*maxR : dx);
+    touch.aimY = touch.aimOy + (len>maxR ? dy/len*maxR : dy);
+    if(len > dead){
+      mouse.x = player.x + (dx/len)*240;
+      mouse.y = player.y + (dy/len)*240;
+    }
   }
 }, {passive:false});
 function touchEnd(e){
@@ -1190,6 +1249,14 @@ atkBtn.addEventListener('pointerup', atkBtnRelease);
 atkBtn.addEventListener('pointercancel', atkBtnRelease);
 atkBtn.addEventListener('pointerleave', atkBtnRelease);
 
+// SPECIAL BUTTON: instant signature move, aims at nearest enemy on touch
+const spBtn = document.getElementById('special-btn');
+spBtn.addEventListener('pointerdown', e=>{
+  e.preventDefault(); e.stopPropagation();
+  if(IS_TOUCH) aimAtNearestEnemy();
+  doSpecial();
+});
+
 //////////////////////// PAUSE ////////////////////////
 function setPaused(on){
   if(on && gameState==='playing'){
@@ -1197,10 +1264,12 @@ function setPaused(on){
     if(player && player.charging){ player.charging = false; player.chargeT = 0; }
     keys = {};
     document.getElementById('pause-stats').textContent =
-      `${player.name} · Level ${player.level} · Stage ${stageIndex}/15 · ${player.gold} gold`;
+      endlessMode
+        ? `${player.name} · Endless Wave ${endlessWave} · Score ${score} · ${player.gold} gold`
+        : `${player.name} · Level ${player.level} · Stage ${stageIndex}/15 · ${player.gold} gold`;
     document.getElementById('pause-controls').textContent = IS_TOUCH
-      ? 'Drag left side to move · Hold ⚔️ to charge, release to strike · Tap 📜 Stats to spend points'
-      : 'WASD/Arrows move · Hold Space/Click to charge · 1–6 swap weapon · Q/E items · C stats · P/Esc pause';
+      ? 'Left stick move · Right stick aim+charge · ⚔️ auto-attack · Gold button: special move · 📜 Stats spends points'
+      : 'WASD/Arrows move · Hold Space/Click to charge · F special move · Q/E items · C stats · P/Esc pause';
     document.getElementById('pause-overlay').style.display = 'flex';
   } else if(!on && gameState==='paused'){
     gameState = 'playing';
@@ -1209,7 +1278,7 @@ function setPaused(on){
 }
 document.getElementById('pause-btn').addEventListener('click', ()=> setPaused(gameState!=='paused'));
 document.getElementById('pause-resume').addEventListener('click', ()=> setPaused(false));
-document.getElementById('pause-restart').addEventListener('click', ()=>{ hideAllOverlays(); resetGame(); });
+document.getElementById('pause-quit').addEventListener('click', ()=>{ hideAllOverlays(); resetGame(); });
 document.getElementById('pause-sound').addEventListener('click', function(){
   SFX.on = !SFX.on;
   this.textContent = SFX.on ? 'SOUND: ON' : 'SOUND: OFF';
@@ -1238,21 +1307,21 @@ document.getElementById('toggle-sheet-hint').addEventListener('click', ()=>{
 const IS_TOUCH = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
 if(IS_TOUCH){
   const sub = document.querySelector('#start-screen .sub');
-  if(sub) sub.textContent = 'Name your hero and pick a starting weapon. Left side: drag to move. Hold the ⚔️ button (or touch the right side) to charge, release to strike — longer charge, harder hit. Visit the merchant to forge stronger weapons.';
+  if(sub) sub.textContent = 'Name your hero and pick a starting weapon. Left stick: move. Right stick: aim + charge, release to strike. The gold button unleashes your special move. One weapon per journey — choose well.';
 }
 
 //////////////////////// UI BUILD ////////////////////////
 function buildWeaponBar(){
   const bar = document.getElementById('weapon-bar');
   bar.innerHTML = '';
-  WEAPONS.forEach((w,i)=>{
-    const el = document.createElement('div');
-    el.className = 'wslot' + (i===selectedWeaponIdx ? ' active':'');
-    const lvl = player.weaponLevels[w.id] ? player.weaponLevels[w.id].level : 1;
-    el.innerHTML = `<div class="key">${w.key}</div><div class="icon">${w.icon}</div><div class="lbl">${w.name}</div><div class="wlvl">Lv${lvl}</div>`;
-    el.addEventListener('click', ()=>{ selectedWeaponIdx=i; buildWeaponBar(); refreshCharSheet(); });
-    bar.appendChild(el);
-  });
+  // One weapon per journey — the blade you chose is the blade you carry.
+  const w = WEAPONS[selectedWeaponIdx];
+  const el = document.createElement('div');
+  el.className = 'wslot active';
+  const lvl = player.weaponLevels[w.id] ? player.weaponLevels[w.id].level : 1;
+  el.innerHTML = `<div class="icon">${w.icon}</div><div class="lbl">${w.name}</div><div class="wlvl">Lv${lvl}</div>`;
+  bar.appendChild(el);
+  document.getElementById('sp-icon').textContent = SPECIALS[w.id] ? SPECIALS[w.id].icon : '✨';
 }
 function buildItemBar(){
   const bar = document.getElementById('item-bar');
@@ -1314,10 +1383,18 @@ function refreshHud(){
 function syncHud(){
   refreshHud();
   const st = STAGES[stageIndex-1];
-  document.getElementById('stage-label').textContent = `Stage ${stageIndex}/15`;
+  document.getElementById('stage-label').textContent = endlessMode ? `Endless · Wave ${endlessWave}` : `Stage ${stageIndex}/15`;
   document.getElementById('stage-name-label').textContent = st.name;
-  document.getElementById('quota-label').textContent = bossSpawned ? 'Boss Fight!' : `Foes: ${stageKills}/${st.quota}`;
-  document.getElementById('alive-label').textContent = `Enemies Alive: ${entities.length}`;
+  document.getElementById('quota-label').textContent = bossSpawned ? 'Boss Fight!' : `Foes: ${stageKills}/${currentQuota()}`;
+  const sp = SPECIALS[WEAPONS[selectedWeaponIdx].id];
+  if(sp){
+    const sb = document.getElementById('special-btn');
+    const ready = player.specialCd <= 0 && player.mp >= sp.mp;
+    sb.classList.toggle('disabled', !ready);
+    document.getElementById('sp-cd').textContent =
+      player.specialCd > 0 ? Math.ceil(player.specialCd)+'s' : (player.mp < sp.mp ? 'MP' : '');
+  }
+  document.getElementById('alive-label').textContent = `Enemies Alive: ${entities.length}` + (endlessMode ? ` · Score ${score}` : '');
   const boss = entities.find(e=>e.isBoss);
   if(boss){
     document.getElementById('boss-hpbar').style.display = 'block';
@@ -1362,6 +1439,84 @@ function tryAttack(chargeT=0){
   }
 }
 
+//////////////////////// SPECIAL MOVES — one signature move per weapon ////////////////////////
+const SPECIALS = {
+  nunchucks:{ name:'Cyclone Fury',  icon:'🌀', mp:12, cd:6,
+    desc:'Spin — hit everything nearby, heavy knockback',
+    fn(ang, w){
+      for(let i=0;i<12;i++) particles.push({type:'burst', x:player.x, y:player.y, t:0, life:0.4, vx:rand(-240,240), vy:rand(-240,240), color:w.color});
+      entities.forEach(en=>{
+        if(dist(player.x,player.y,en.x,en.y) < 110 + en.r){
+          dealDamageToEnemy(en, w, 2.2);
+          const a = Math.atan2(en.y-player.y, en.x-player.x);
+          en.knockX += Math.cos(a)*380; en.knockY += Math.sin(a)*380;
+        }
+      });
+    }},
+  lightsaber:{ name:'Blade Dash',   icon:'⚡', mp:14, cd:6,
+    desc:'Dash through foes, cutting everything in your path',
+    fn(ang, w){
+      const sx = player.x, sy = player.y;
+      const dx = Math.cos(ang)*180, dy = Math.sin(ang)*180;
+      player.x = clamp(sx+dx, 16, W-16); player.y = clamp(sy+dy, 16, H-16);
+      player.invuln = Math.max(player.invuln, 0.5);
+      for(let i=0;i<9;i++) particles.push({type:'burst', x:sx+dx*i/9, y:sy+dy*i/9, t:0, life:0.3, vx:rand(-70,70), vy:rand(-70,70), color:w.color});
+      entities.forEach(en=>{
+        const t2 = clamp(((en.x-sx)*dx + (en.y-sy)*dy) / (dx*dx + dy*dy), 0, 1);
+        if(dist(en.x, en.y, sx+dx*t2, sy+dy*t2) < 44 + en.r) dealDamageToEnemy(en, w, 2.5);
+      });
+    }},
+  grenade:{ name:'Cluster Bomb',    icon:'💥', mp:16, cd:7,
+    desc:'Lob five bombs in a spreading fan',
+    fn(ang, w){
+      for(let i=-2;i<=2;i++){
+        const a = ang + i*0.22;
+        projectiles.push({x:player.x, y:player.y, vx:Math.cos(a)*w.projSpeed, vy:Math.sin(a)*w.projSpeed,
+          w, life:(w.range/w.projSpeed)*0.8, owner:'player', returning:false, startX:player.x, startY:player.y, hitSet:new Set(), chargeMult:1.3});
+      }
+    }},
+  musket:{ name:'Scattershot',      icon:'🎯', mp:12, cd:6,
+    desc:'Nine-round burst in a wide cone',
+    fn(ang, w){
+      for(let i=-4;i<=4;i++){
+        const a = ang + i*0.13;
+        projectiles.push({x:player.x, y:player.y, vx:Math.cos(a)*w.projSpeed, vy:Math.sin(a)*w.projSpeed,
+          w, life:(w.range/w.projSpeed)*0.6, owner:'player', returning:false, startX:player.x, startY:player.y, hitSet:new Set(), chargeMult:1.2});
+      }
+    }},
+  boomerang:{ name:'Twin Cyclones', icon:'🌪️', mp:10, cd:5,
+    desc:'Throw two heavy boomerangs at once',
+    fn(ang, w){
+      [-0.4, 0.4].forEach(off=>{
+        const a = ang + off;
+        projectiles.push({x:player.x, y:player.y, vx:Math.cos(a)*w.projSpeed, vy:Math.sin(a)*w.projSpeed,
+          w, life:(w.range/w.projSpeed), owner:'player', returning:false, startX:player.x, startY:player.y, hitSet:new Set(), chargeMult:1.6});
+      });
+    }},
+  staff:{ name:'Thunder Nova',      icon:'⛈️', mp:20, cd:7,
+    desc:'Lightning strikes every foe near you',
+    fn(ang, w){
+      entities.forEach(en=>{
+        if(dist(player.x,player.y,en.x,en.y) < 240 + en.r){
+          dealDamageToEnemy(en, w, 1.8);
+          for(let i=0;i<4;i++) particles.push({type:'burst', x:en.x, y:en.y-20, t:0, life:0.3, vx:rand(-80,80), vy:rand(60,200), color:w.color});
+        }
+      });
+    }},
+};
+function doSpecial(){
+  if(gameState!=='playing') return;
+  const w = WEAPONS[selectedWeaponIdx];
+  const sp = SPECIALS[w.id];
+  if(!sp || player.specialCd > 0 || player.mp < sp.mp) return;
+  player.mp -= sp.mp;
+  player.specialCd = sp.cd;
+  const ang = Math.atan2(mouse.y-player.y, mouse.x-player.x);
+  player.facing = ang;
+  SFX.special();
+  sp.fn(ang, w);
+}
+
 function playerDamageValue(w, chargeMult=1){
   const s = derived(player).effStats;
   let dmg = w.dmgFn(s) * weaponDamageMultiplier(w) * chargeMult;
@@ -1391,6 +1546,7 @@ function killEnemy(en){
   if(en.dead) return;
   en.dead = true;
   SFX.kill();
+  if(endlessMode){ score += en.isBoss ? 250 + endlessWave*25 : (en.def.tier||1)*10; }
   let g = en.goldReward||0;
   if(hasRelic('lucky')) g = Math.round(g*1.5);
   player.gold += g;
@@ -1664,6 +1820,20 @@ function drawPlayer(){
   ctx.fillStyle = '#2a4a63'; ctx.fillRect(-9,-6,18,5);
   ctx.fillStyle = '#e8c9a0'; ctx.fillRect(-7,-20,14,14);
   ctx.fillStyle = '#5a3a2a'; ctx.fillRect(-7,-20,14,4);
+  // face: eyes track facing direction; mouth reacts to state
+  const lookX = Math.cos(p.facing)*1.4, lookY = Math.sin(p.facing)*0.8;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(-5.5,-15,4,4); ctx.fillRect(1.5,-15,4,4);
+  ctx.fillStyle = '#1c2733';
+  ctx.fillRect(-4.5+lookX,-14+lookY,2,2); ctx.fillRect(2.5+lookX,-14+lookY,2,2);
+  if(p.hurtFlash>0){
+    ctx.fillStyle = '#7a2a2a'; ctx.fillRect(-2,-9.5,4,3); // ouch
+  } else if(p.charging){
+    ctx.fillStyle = '#4a2a20'; ctx.fillRect(-3,-9,6,1.6); // gritted focus
+  } else {
+    ctx.strokeStyle = '#4a2a20'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(0,-10.5,2.6, 0.15*Math.PI, 0.85*Math.PI); ctx.stroke(); // easy smile
+  }
   ctx.fillStyle = '#2a2420'; ctx.fillRect(-8,12,6,8); ctx.fillRect(2,12,6,8);
   const ang = p.facing, w = WEAPONS[selectedWeaponIdx];
   ctx.strokeStyle = w.color; ctx.lineWidth = 4; ctx.lineCap='round';
@@ -1854,6 +2024,7 @@ function update(dt){
 
   if(player.charging) player.chargeT = Math.min(CHARGE_MAX, player.chargeT + dt*(hasRelic('crystal') ? 1.3 : 1));
   if(player.attackCd>0) player.attackCd -= dt;
+  if(player.specialCd>0) player.specialCd -= dt;
   if(player.invuln>0) player.invuln -= dt;
   if(player.hurtFlash>0) player.hurtFlash -= dt;
   player.mp = Math.min(player.maxMp, player.mp + player.maxMp*(hasRelic('battery') ? 0.096 : 0.06)*dt);
@@ -1862,7 +2033,7 @@ function update(dt){
   spawnTimer -= dt;
   const spawnInterval = clamp(1.5 - st.tier*0.08, 0.5, 1.5);
   if(!bossSpawned){
-    if(stageKills >= st.quota){
+    if(stageKills >= currentQuota()){
       spawnBoss();
     } else if(spawnTimer<=0 && entities.length < maxAliveForTier(st.tier)){
       spawnFodder();
@@ -1880,8 +2051,9 @@ function update(dt){
   if(player.hp<=0 && gameState==='playing'){
     gameState = 'gameover';
     MUSIC.stop();
-    document.getElementById('go-stats').textContent =
-      `Fell on Stage ${stageIndex} (${st.name}) · Level ${player.level} · ${player.gold} gold`;
+    document.getElementById('go-stats').textContent = endlessMode
+      ? `Fell on Wave ${endlessWave} · Score ${score} (best ${bestScore}) · Level ${player.level}`
+      : `Fell on Stage ${stageIndex} (${st.name}) · Level ${player.level} · ${player.gold} gold`;
     document.getElementById('gameover').style.display='flex';
   }
   syncHud();
@@ -1914,6 +2086,16 @@ function render(dt){
     ctx.beginPath(); ctx.arc(touch.joyOx, touch.joyOy, 46, 0, Math.PI*2); ctx.stroke();
     ctx.fillStyle = '#d8c39a';
     ctx.beginPath(); ctx.arc(touch.joyX, touch.joyY, 18, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  if(touch.aimId!==null){
+    const wc = WEAPONS[selectedWeaponIdx].color;
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = wc; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(touch.aimOx, touch.aimOy, 46, 0, Math.PI*2); ctx.stroke();
+    ctx.fillStyle = wc;
+    ctx.beginPath(); ctx.arc(touch.aimX, touch.aimY, 18, 0, Math.PI*2); ctx.fill();
     ctx.restore();
   }
 }
