@@ -162,6 +162,8 @@
   .pickslot .picon{ font-size:24px; }
   .pickslot .pname{ font-size:10px; color:var(--parchment); margin-top:4px; }
   .pickslot .pelem{ font-size:8px; color:var(--parchment-dim); }
+  .pickslot .prole{ font-size:9px; color:var(--mana); letter-spacing:0.5px; margin-top:2px; }
+  .pickslot .php{ font-size:8px; color:var(--exp-gold); margin-top:2px; }
   .wslot .wlvl{ position:absolute; bottom:1px; right:2px; font-size:7px; color:var(--exp-gold); }  #attack-btn{
     display:none; position:absolute; right:16px; bottom:84px;
     width:92px; height:92px; border-radius:50%;
@@ -498,18 +500,18 @@ function elementMultiplier(atkElem, defElem){
 
 //////////////////////// WEAPONS ////////////////////////
 const WEAPONS = [
-  { id:'nunchucks', key:'1', name:'Nunchucks', icon:'🥢', type:'melee', element:'Neutral',
+  { id:'nunchucks', key:'1', name:'Nunchucks', icon:'🥢', type:'melee', element:'Neutral', role:'Brawler', hpMult:3.2,
     cooldown:0.28, range:52, arc:2.0, mpCost:0, dmgFn:(s)=> 3 + s.str*1.05, color:'#c68f4f', crit:0 },
-  { id:'lightsaber', key:'2', name:'Lightblade', icon:'⚔️', type:'melee', element:'Holy',
+  { id:'lightsaber', key:'2', name:'Lightblade', icon:'⚔️', type:'melee', element:'Holy', role:'Knight', hpMult:3.0,
     cooldown:0.55, range:64, arc:1.05, mpCost:3, dmgFn:(s)=> 6 + s.str*2.1, color:'#4fd1e0', crit:0.05 },
-  { id:'grenade', key:'3', name:'Grenadier', icon:'💣', type:'ranged-aoe', element:'Fire',
-    cooldown:1.15, range:520, arc:0, mpCost:6, dmgFn:(s)=> 8 + s.str*1.5 + s.dex*0.6, color:'#e0743a', crit:0, aoe:64, projSpeed:340 },
-  { id:'musket', key:'4', name:'Musket', icon:'🔫', type:'ranged', element:'Neutral',
-    cooldown:0.95, range:600, arc:0, mpCost:0, dmgFn:(s)=> 5 + s.dex*2.4, color:'#8b8b8b', crit:0.12, projSpeed:620 },
-  { id:'boomerang', key:'5', name:'Boomerang', icon:'🪃', type:'ranged-return', element:'Wind',
-    cooldown:0.62, range:480, arc:0, mpCost:2, dmgFn:(s)=> 4 + s.dex*1.3, color:'#7fbf5f', crit:0.08, projSpeed:420 },
-  { id:'staff', key:'6', name:'Arcstaff', icon:'🪄', type:'magic', element:'Thunder',
-    cooldown:0.5, range:480, arc:0, mpCost:7, dmgFn:(s)=> 5 + s.int*2.2, color:'#a56bd6', crit:0.06, projSpeed:460 },
+  { id:'grenade', key:'3', name:'Grenadier', icon:'💣', type:'ranged-aoe', element:'Fire', role:'Bombardier', hpMult:2.1,
+    cooldown:1.15, range:520, arc:0, mpCost:6, dmgFn:(s)=> 9 + s.str*1.6 + s.dex*0.6, color:'#e0743a', crit:0, aoe:64, projSpeed:340 },
+  { id:'musket', key:'4', name:'Musket', icon:'🔫', type:'ranged', element:'Neutral', role:'Gunslinger', hpMult:1.7,
+    cooldown:0.95, range:600, arc:0, mpCost:0, dmgFn:(s)=> 6 + s.dex*2.7, color:'#8b8b8b', crit:0.12, projSpeed:620 },
+  { id:'boomerang', key:'5', name:'Boomerang', icon:'🪃', type:'ranged-return', element:'Wind', role:'Ranger', hpMult:2.0,
+    cooldown:0.62, range:480, arc:0, mpCost:2, dmgFn:(s)=> 3 + s.dex*0.95, color:'#7fbf5f', crit:0.08, projSpeed:420 },
+  { id:'staff', key:'6', name:'Arcstaff', icon:'🪄', type:'magic', element:'Thunder', role:'Mage', hpMult:1.8,
+    cooldown:0.5, range:480, arc:0, mpCost:6, dmgFn:(s)=> 5 + s.int*2.2, color:'#a56bd6', crit:0.06, projSpeed:460 },
 ];
 
 //////////////////////// FODDER ENEMY TYPES (30) ////////////////////////
@@ -544,6 +546,13 @@ const ENEMY_TYPES = [
   {name:'Onyx Battle-Golem', tier:3, shape:'construct', main:'#3a3a4a', sec:'#8a2a2a', size:34, speed:42, ranged:false, element:'Dark'},
   {name:'Azure Wyvern', tier:4, shape:'flyer', main:'#5a8aa0', sec:'#8fd0c8', size:38, speed:80, ranged:true, element:'Ice'},
   {name:'Emerald Drakeling', tier:4, shape:'flyer', main:'#3a8a3a', sec:'#c8d84a', size:38, speed:75, ranged:true, element:'Wind'},
+  // Dread-class — tier 5 elites for the late story and the Gauntlet
+  {name:'Obsidian Golem',  tier:5, shape:'quad',    main:'#2a2a33', sec:'#6a3ad6', size:30, speed:42,  ranged:false, element:'Earth'},
+  {name:'Void Reaper',     tier:5, shape:'biped',   main:'#1c1428', sec:'#8a2ac8', size:24, speed:115, ranged:false, element:'Dark'},
+  {name:'Storm Wyvern',    tier:5, shape:'flyer',   main:'#3a5a8a', sec:'#8fd0e8', size:26, speed:95,  ranged:true,  element:'Wind'},
+  {name:'Frost Revenant',  tier:5, shape:'biped',   main:'#b8d8e8', sec:'#3a6fd6', size:23, speed:70,  ranged:true,  element:'Ice'},
+  {name:'Inferno Fiend',   tier:5, shape:'insect',  main:'#8a1c14', sec:'#f0902a', size:25, speed:88,  ranged:false, element:'Fire'},
+  {name:'Plague Serpent',  tier:5, shape:'serpent', main:'#4a5a2a', sec:'#a5d63a', size:27, speed:78,  ranged:true,  element:'Dark'},
 ];
 
 const TIER_BASE = {
@@ -551,6 +560,7 @@ const TIER_BASE = {
   2:{hp:55, atk:8, def:3, mdef:3, exp:20, gold:5},
   3:{hp:130, atk:14, def:6, mdef:6, exp:42, gold:9},
   4:{hp:230, atk:19, def:9, mdef:9, exp:65, gold:14},
+  5:{hp:420, atk:26, def:13, mdef:13, exp:110, gold:24},
 };
 
 //////////////////////// STAGE BOSSES (15) ////////////////////////
@@ -814,7 +824,12 @@ function buildWeaponPick(){
   WEAPONS.forEach((w,i)=>{
     const el = document.createElement('div');
     el.className = 'pickslot' + (i===startPickIdx ? ' sel':'');
-    el.innerHTML = `<div class="picon">${w.icon}</div><div class="pname">${w.name}</div><div class="pelem">${w.element}</div>`;
+    const hpPct = Math.round(w.hpMult*100);
+    const rangeLbl = w.type==='melee' ? 'Melee' : (w.range>=600?'Long':(w.range>=480?'Mid':'Short'));
+    el.innerHTML = `<div class="picon">${w.icon}</div><div class="pname">${w.name}</div>` +
+      `<div class="prole">${w.role}</div>` +
+      `<div class="pelem">${w.element} · ${rangeLbl}</div>` +
+      `<div class="php">♥ ${hpPct}% HP</div>`;
     el.addEventListener('click', ()=>{ startPickIdx = i; buildWeaponPick(); });
     wrap.appendChild(el);
   });
@@ -824,8 +839,8 @@ function confirmStart(){
   const nameVal = document.getElementById('name-input').value.trim();
   player.name = nameVal ? nameVal.slice(0,14) : 'Wanderer';
   selectedWeaponIdx = startPickIdx;
-  // Close-range fighters live in danger: melee starting weapons grant 5x HP for the run.
-  player.hpMult = WEAPONS[startPickIdx].type==='melee' ? 5 : 1;
+  // Each class carries its own survivability: brawlers tank, snipers are fragile.
+  player.hpMult = WEAPONS[startPickIdx].hpMult || 1;
   recalcVitals();
   player.hp = player.maxHp; player.mp = player.maxMp;
   document.getElementById('start-screen').style.display = 'none';
@@ -872,21 +887,28 @@ function maxAliveForTier(t){ return clamp(5 + t*2, 5, 18); }
 
 function spawnFodder(){
   const st = STAGES[stageIndex-1];
-  const t = Math.max(1, st.tier - (Math.random()<0.3?1:0));
-  const pool = ENEMY_TYPES.filter(e=> e.tier <= st.tier && e.tier >= Math.max(1, st.tier-2));
+  // Dread-class (tier 5) joins the pool late in the story and always in the Gauntlet
+  const maxTier = (endlessMode || stageIndex >= 13) ? 5 : st.tier;
+  const pool = ENEMY_TYPES.filter(e=> e.tier <= maxTier && e.tier >= Math.max(1, maxTier-2));
   const def = choice(pool.length? pool : ENEMY_TYPES.filter(e=>e.tier===1));
   const b = TIER_BASE[def.tier];
   const scale = (1 + (stageIndex-1)*0.07) * endlessScale();
+  // Elite affix: golden champions with big bodies and bigger rewards
+  const eliteChance = endlessMode
+    ? Math.min(0.35, 0.12 + endlessWave*0.01)
+    : clamp((stageIndex-8)*0.03, 0, 0.25);
+  const elite = Math.random() < eliteChance;
   const side = randi(0,3);
   let x,y;
   if(side===0){ x=-30; y=rand(0,H); } else if(side===1){ x=W+30; y=rand(0,H); }
   else if(side===2){ x=rand(0,W); y=-30; } else { x=rand(0,W); y=H+30; }
+  const hpMul = elite ? 2.5 : 1, atkMul = elite ? 1.5 : 1, rewMul = elite ? 3 : 1;
   entities.push({
-    def, x, y, r: def.size*0.5,
-    hp: Math.round(b.hp*scale*rand(0.9,1.15)), maxHp: Math.round(b.hp*scale),
-    atk: Math.round(b.atk*scale), def_: Math.round(b.def*scale), mdef: Math.round(b.mdef*scale),
-    expReward: Math.round(b.exp*scale), goldReward: Math.round(b.gold*scale),
-    speed: def.speed, hitCd:0, shootCd:rand(0.5,1.5), flashT:0, animT:rand(0,10),
+    def, x, y, r: def.size*0.5*(elite?1.3:1), elite,
+    hp: Math.round(b.hp*scale*rand(0.9,1.15)*hpMul), maxHp: Math.round(b.hp*scale*hpMul),
+    atk: Math.round(b.atk*scale*atkMul), def_: Math.round(b.def*scale), mdef: Math.round(b.mdef*scale),
+    expReward: Math.round(b.exp*scale*rewMul), goldReward: Math.round(b.gold*scale*rewMul),
+    speed: def.speed*(elite?1.1:1), hitCd:0, shootCd:rand(0.5,1.5), flashT:0, animT:rand(0,10),
     knockX:0, knockY:0, isBoss:false,
   });
 }
@@ -1967,6 +1989,14 @@ function drawPlayer(){
 function drawCreature(en){
   const {def} = en;
   ctx.save();
+  if(en.elite && !en.dead){
+    const pulse = 0.5 + 0.3*Math.sin(performance.now()/160 + en.animT);
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.strokeStyle = '#e8c445'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(en.x, en.y + en.r*0.4, en.r + 8, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
   ctx.translate(en.x, en.y);
   const bob = Math.sin(en.animT*6) * (def.shape==='flyer'? 4 : 1.5);
   ctx.translate(0, bob);
