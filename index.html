@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>Weapon Arena — Voxelbound</title>
 <style>
   :root{
@@ -19,7 +21,7 @@
     --exp-gold:#d4a63b;
     --gold-col:#e8c445;
   }
-  *{box-sizing:border-box;}
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{
     margin:0;padding:0;height:100%;
     background:#0a0806;
@@ -27,6 +29,13 @@
     color:var(--parchment);
     overflow:hidden;
     user-select:none;
+    -webkit-user-select:none;
+    touch-action:none;
+    -webkit-text-size-adjust:100%;
+    text-size-adjust:100%;
+    overscroll-behavior:none;
+    position:fixed;
+    width:100%;
     display:flex;
     align-items:center;
     justify-content:center;
@@ -436,6 +445,26 @@ const SFX = {
 };
 window.addEventListener('pointerdown', ()=>SFX.ensure());
 window.addEventListener('keydown', ()=>SFX.ensure());
+
+//////////////////////// ZOOM LOCK — keep the page from pinch/double-tap/wheel zooming ////////////////////////
+// Safari ignores user-scalable=no, so block the gestures directly.
+['gesturestart','gesturechange','gestureend'].forEach(ev=>{
+  document.addEventListener(ev, e=>e.preventDefault(), {passive:false});
+});
+document.addEventListener('wheel', e=>{ if(e.ctrlKey) e.preventDefault(); }, {passive:false});
+document.addEventListener('keydown', e=>{
+  // Ctrl/Cmd +/-/0 browser zoom shortcuts
+  if((e.ctrlKey||e.metaKey) && ['+','-','=','0'].includes(e.key)) e.preventDefault();
+}, {passive:false});
+// Double-tap to zoom: swallow the second quick tap
+let lastTouchEnd = 0;
+document.addEventListener('touchend', e=>{
+  const now = Date.now();
+  if(now - lastTouchEnd <= 300) e.preventDefault();
+  lastTouchEnd = now;
+}, {passive:false});
+// Multi-finger touches never scroll/zoom the page
+document.addEventListener('touchmove', e=>{ if(e.touches.length > 1) e.preventDefault(); }, {passive:false});
 
 //////////////////////// MUSIC (generative, calm <-> boss, mutable) ////////////////////////
 const MUSIC = {
