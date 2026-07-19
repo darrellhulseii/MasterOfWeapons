@@ -598,12 +598,15 @@ const ENEMY_TYPES = [
   {name:'Azure Wyvern', tier:4, shape:'flyer', main:'#5a8aa0', sec:'#8fd0c8', size:38, speed:80, ranged:true, element:'Ice'},
   {name:'Emerald Drakeling', tier:4, shape:'flyer', main:'#3a8a3a', sec:'#c8d84a', size:38, speed:75, ranged:true, element:'Wind'},
   // Dread-class — tier 5 elites for the late story and the Gauntlet
-  {name:'Obsidian Golem',  tier:5, shape:'quad',    main:'#2a2a33', sec:'#6a3ad6', size:30, speed:42,  ranged:false, element:'Earth'},
-  {name:'Void Reaper',     tier:5, shape:'biped',   main:'#1c1428', sec:'#8a2ac8', size:24, speed:115, ranged:false, element:'Dark'},
-  {name:'Storm Wyvern',    tier:5, shape:'flyer',   main:'#3a5a8a', sec:'#8fd0e8', size:26, speed:95,  ranged:true,  element:'Wind'},
-  {name:'Frost Revenant',  tier:5, shape:'biped',   main:'#b8d8e8', sec:'#3a6fd6', size:23, speed:70,  ranged:true,  element:'Ice'},
-  {name:'Inferno Fiend',   tier:5, shape:'insect',  main:'#8a1c14', sec:'#f0902a', size:25, speed:88,  ranged:false, element:'Fire'},
-  {name:'Plague Serpent',  tier:5, shape:'serpent', main:'#4a5a2a', sec:'#a5d63a', size:27, speed:78,  ranged:true,  element:'Dark'},
+  {name:'Obsidian Golem',  tier:5, shape:'brute',   main:'#2a2a33', sec:'#6a3ad6', size:32, speed:40,  ranged:false, element:'Earth'},
+  {name:'Void Reaper',     tier:5, shape:'wraith',  main:'#1c1428', sec:'#b46bff', size:26, speed:100, ranged:true,  element:'Dark',  attack:'homing'},
+  {name:'Storm Wyvern',    tier:5, shape:'flyer',   main:'#3a5a8a', sec:'#8fd0e8', size:26, speed:95,  ranged:true,  element:'Wind',  attack:'triple'},
+  {name:'Frost Revenant',  tier:5, shape:'caster',  main:'#b8d8e8', sec:'#3a6fd6', size:24, speed:60,  ranged:true,  element:'Ice',   attack:'spread'},
+  {name:'Inferno Fiend',   tier:5, shape:'insect',  main:'#8a1c14', sec:'#f0902a', size:25, speed:88,  ranged:true,  element:'Fire',  attack:'lob'},
+  {name:'Plague Serpent',  tier:5, shape:'serpent', main:'#4a5a2a', sec:'#a5d63a', size:27, speed:78,  ranged:true,  element:'Dark',  attack:'scatter'},
+  {name:'Hex Widow',       tier:5, shape:'spider',  main:'#3a1a2e', sec:'#e04a8a', size:26, speed:82,  ranged:true,  element:'Dark',  attack:'burst'},
+  {name:'Rift Sorcerer',   tier:5, shape:'caster',  main:'#2a2050', sec:'#a56bff', size:24, speed:52,  ranged:true,  element:'Thunder', attack:'spiral'},
+  {name:'Dire Hound',      tier:4, shape:'hound',   main:'#5a4030', sec:'#e0c040', size:24, speed:130, ranged:false, element:'Neutral'},
 ];
 
 const TIER_BASE = {
@@ -1719,6 +1722,45 @@ function enemyShoot(en, off=0){
     gaze: en.def.mythic === 'medusa',
   });
 }
+// Dispatch the enemy's ranged attack by its `attack` archetype
+function enemyAttack(en){
+  const style = en.def.attack || 'single';
+  const spd = en.isBoss ? 230 : 260;
+  const push = (ang, opts={})=>{
+    projectiles.push(Object.assign({
+      x:en.x, y:en.y, vx:Math.cos(ang)*(opts.speed||spd), vy:Math.sin(ang)*(opts.speed||spd),
+      life:opts.life||2.6, owner:'enemy', dmg:en.atk*(opts.dmgMul||1), element:en.def.element,
+      r:en.isBoss?9:6, color:opts.color||en.def.sec, gaze:en.def.mythic==='medusa',
+    }, opts.extra||{}));
+  };
+  const base = Math.atan2(player.y-en.y, player.x-en.x);
+  switch(style){
+    case 'triple':
+      push(base-0.28); push(base); push(base+0.28); break;
+    case 'burst': {  // radial ring
+      const n = en.isBoss ? 12 : 8;
+      for(let i=0;i<n;i++) push(i/n*Math.PI*2, {speed:spd*0.8});
+      addShake(3,0.15); break; }
+    case 'spiral': {  // rotating fan, advances phase each shot
+      en.spiralA = (en.spiralA||0) + 0.6;
+      for(let i=0;i<4;i++) push(en.spiralA + i*Math.PI/2, {speed:spd*0.85});
+      break; }
+    case 'homing':
+      push(base, {speed:spd*0.7, life:4, color:'#c46bff', extra:{homing:true}}); break;
+    case 'lob':  // heavy slow arc that bursts into shards on expiry
+      push(base, {speed:spd*0.6, life:1.4, color:'#e0902a', dmgMul:1.3,
+        extra:{lob:true, burstColor:en.def.sec}}); break;
+    case 'scatter': {  // wide shotgun cone
+      for(let i=-3;i<=3;i++) push(base+i*0.14, {speed:spd*(0.9+Math.random()*0.3)}); break; }
+    default: push(base);
+  }
+}
+function spawnBurst(x,y,color,n,dmg,element){
+  for(let i=0;i<n;i++){
+    const a=i/n*Math.PI*2;
+    projectiles.push({x,y,vx:Math.cos(a)*200,vy:Math.sin(a)*200,life:1.2,owner:'enemy',dmg,element,r:5,color});
+  }
+}
 function spawnGorgon(b){
   if(entities.filter(e=>!e.dead).length > 14) return;
   const es = endlessScale();
@@ -1758,7 +1800,7 @@ function updateEntities(dt){
       en.shootCd -= dt;
       if(en.shootCd<=0 && d < 480){
         if(en.def.mythic === 'hydra'){ enemyShoot(en,-0.35); enemyShoot(en,0); enemyShoot(en,0.35); }
-        else enemyShoot(en);
+        else enemyAttack(en);
         en.shootCd = rand(en.isBoss?0.7:1.1, en.isBoss?1.3:2.0);
       }
     }
@@ -1785,6 +1827,17 @@ function updateEntities(dt){
 
 function updateProjectiles(dt){
   projectiles.forEach(p=>{
+    if(p.homing && p.owner==='enemy'){
+      const desired = Math.atan2(player.y-p.y, player.x-p.x);
+      const cur = Math.atan2(p.vy, p.vx);
+      let diff = desired - cur;
+      while(diff> Math.PI) diff-=Math.PI*2;
+      while(diff<-Math.PI) diff+=Math.PI*2;
+      const turn = Math.sign(diff)*Math.min(Math.abs(diff), 2.4*dt);
+      const na = cur+turn, sp = Math.hypot(p.vx,p.vy);
+      p.vx = Math.cos(na)*sp; p.vy = Math.sin(na)*sp;
+      if(Math.random()<0.6) particles.push({type:'trail', x:p.x, y:p.y, t:0, life:0.3, color:p.color||'#c46bff'});
+    }
     p.x += p.vx*dt; p.y += p.vy*dt; p.life -= dt;
     if(p.owner==='player' && Math.random() < 0.5){
       particles.push({type:'trail', x:p.x, y:p.y, t:0, life:0.25, color:p.w.color});
@@ -1840,6 +1893,13 @@ function updateProjectiles(dt){
         spawnFloatingText(player.x, player.y-24, Math.round(dmg), '#ff6b6b', false);
         p.life = 0;
       }
+    }
+  });
+  projectiles.forEach(p=>{
+    if(p.lob && p.life<=0 && p.x>0 && p.x<W && p.y>0 && p.y<H){
+      particles.push({type:'explosion', x:p.x, y:p.y, t:0, life:0.4, color:p.burstColor||'#e0902a'});
+      spawnBurst(p.x, p.y, p.burstColor||'#e0902a', 6, p.dmg*0.7, p.element);
+      addShake(3,0.15);
     }
   });
   projectiles = projectiles.filter(p=> p.life>0 && p.x>-60 && p.x<W+60 && p.y>-60 && p.y<H+60);
@@ -2257,6 +2317,57 @@ function drawCreature(en){
       ctx.fillStyle = main; ctx.fillRect(-s*0.6,-s*0.5,s*1.2,s*0.7);
       ctx.fillStyle = sec; ctx.fillRect(-s*0.45,-s*0.85,s*0.9,s*0.4);
       ctx.fillStyle = '#ffdd55'; ctx.fillRect(-s*0.08,-s*0.68,s*0.16,s*0.12);
+      break; }
+    case 'wraith': {  // floating tattered ghost, no legs
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = main;
+      ctx.beginPath();
+      ctx.moveTo(-s*0.5,-s*0.6); ctx.quadraticCurveTo(0,-s*1.1, s*0.5,-s*0.6);
+      ctx.lineTo(s*0.5, s*0.4);
+      for(let i=4;i>=0;i--){ const xx=-s*0.5+ s*(i/4); ctx.lineTo(xx, s*0.4 + Math.sin(en.animT*6+i)*s*0.25); }
+      ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = sec; // glowing eyes
+      ctx.fillRect(-s*0.25,-s*0.55,s*0.15,s*0.15); ctx.fillRect(s*0.1,-s*0.55,s*0.15,s*0.15);
+      break; }
+    case 'spider': {  // round body, 8 animated legs
+      ctx.strokeStyle = darken(main,10); ctx.lineWidth = 2;
+      for(let i=-1;i<=1;i+=2){
+        for(let j=0;j<4;j++){
+          const ly = -s*0.3 + j*s*0.25, sw = Math.sin(en.animT*8 + j)*s*0.12;
+          ctx.beginPath(); ctx.moveTo(s*0.2*i, ly); ctx.lineTo(s*0.95*i, ly - s*0.2 + sw); ctx.stroke();
+        }
+      }
+      ctx.fillStyle = main; ctx.beginPath(); ctx.arc(0,0,s*0.5,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = sec; ctx.beginPath(); ctx.arc(0,-s*0.35,s*0.28,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillRect(-s*0.18,-s*0.4,s*0.1,s*0.1); ctx.fillRect(s*0.08,-s*0.4,s*0.1,s*0.1);
+      break; }
+    case 'brute': {  // hulking wide-shouldered bruiser
+      ctx.fillStyle = darken(main,22); ctx.fillRect(-s*0.5,s*0.15,s*0.35,s*0.6); ctx.fillRect(s*0.15,s*0.15,s*0.35,s*0.6);
+      ctx.fillStyle = main; ctx.fillRect(-s*0.75,-s*0.4,s*1.5,s*0.65);
+      ctx.fillStyle = lighten(main,20); ctx.fillRect(-s*0.95,-s*0.35,s*0.3,s*0.4); ctx.fillRect(s*0.65,-s*0.35,s*0.3,s*0.4); // fists
+      ctx.fillStyle = sec; ctx.fillRect(-s*0.35,-s*0.85,s*0.7,s*0.5);
+      ctx.fillStyle = '#fff'; ctx.fillRect(-s*0.2,-s*0.7,s*0.12,s*0.1); ctx.fillRect(s*0.08,-s*0.7,s*0.12,s*0.1);
+      break; }
+    case 'caster': {  // small robed spellcaster with a floating orb
+      ctx.fillStyle = main;
+      ctx.beginPath(); ctx.moveTo(-s*0.45,-s*0.3); ctx.lineTo(s*0.45,-s*0.3); ctx.lineTo(s*0.6,s*0.6); ctx.lineTo(-s*0.6,s*0.6); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = darken(main,20); ctx.fillRect(-s*0.3,-s*0.75,s*0.6,s*0.5); // hood
+      ctx.fillStyle = sec; ctx.fillRect(-s*0.16,-s*0.55,s*0.32,s*0.12); // glowing face slit
+      const orbP = 0.6+0.4*Math.sin(en.animT*5);
+      const og = ctx.createRadialGradient(s*0.7,-s*0.2,0,s*0.7,-s*0.2,s*0.35);
+      og.addColorStop(0,'#fff'); og.addColorStop(0.4,sec); og.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.globalAlpha = orbP; ctx.fillStyle = og;
+      ctx.beginPath(); ctx.arc(s*0.7,-s*0.2,s*0.35,0,Math.PI*2); ctx.fill(); ctx.globalAlpha = 1;
+      break; }
+    case 'hound': {  // low, fast quadruped predator
+      ctx.fillStyle = darken(main,20);
+      ctx.fillRect(-s*0.6,s*0.2,s*0.18,s*0.4); ctx.fillRect(-s*0.3,s*0.2,s*0.18,s*0.4);
+      ctx.fillRect(s*0.12,s*0.2,s*0.18,s*0.4); ctx.fillRect(s*0.42,s*0.2,s*0.18,s*0.4);
+      ctx.fillStyle = main; ctx.beginPath(); ctx.ellipse(0,-s*0.05,s*0.75,s*0.32,0,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = main; ctx.beginPath(); ctx.moveTo(s*0.5,-s*0.2); ctx.lineTo(s*0.95,-s*0.35); ctx.lineTo(s*0.7,s*0.1); ctx.closePath(); ctx.fill(); // head
+      ctx.fillStyle = sec; ctx.fillRect(s*0.6,-s*0.25,s*0.1,s*0.08); // eye
+      ctx.strokeStyle = sec; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(-s*0.7,-s*0.1); ctx.lineTo(-s*1.0,-s*0.3+Math.sin(en.animT*7)*s*0.15); ctx.stroke(); // tail
       break; }
   }
   ctx.restore();
