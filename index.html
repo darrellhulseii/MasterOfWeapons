@@ -606,7 +606,7 @@ const ENEMY_TYPES = [
   {name:'Plague Serpent',  tier:5, shape:'serpent', main:'#4a5a2a', sec:'#a5d63a', size:27, speed:78,  ranged:true,  element:'Dark',  attack:'scatter'},
   {name:'Hex Widow',       tier:5, shape:'spider',  main:'#3a1a2e', sec:'#e04a8a', size:26, speed:82,  ranged:true,  element:'Dark',  attack:'burst'},
   {name:'Rift Sorcerer',   tier:5, shape:'caster',  main:'#2a2050', sec:'#a56bff', size:24, speed:52,  ranged:true,  element:'Thunder', attack:'spiral'},
-  {name:'Dire Hound',      tier:4, shape:'hound',   main:'#5a4030', sec:'#e0c040', size:24, speed:130, ranged:false, element:'Neutral'},
+  {name:'Dire Hound',      tier:4, shape:'hound',   main:'#5a4030', sec:'#e0c040', size:24, speed:120, ranged:false, element:'Neutral', lunge:true},
 ];
 
 const TIER_BASE = {
@@ -638,11 +638,11 @@ const BOSS_TYPES = [
 
 //////////////////////// MYTHIC BOSSES — Endless Gauntlet rotation ////////////////////////
 const MYTHIC_BOSSES = [
-  {name:'Minotaur', shape:'quad',    main:'#8a5a2e', sec:'#c8342a', element:'Earth', mythic:'minotaur', ranged:false, speed:52},
+  {name:'Minotaur', shape:'brute',   main:'#8a5a2e', sec:'#c8342a', element:'Earth', mythic:'minotaur', ranged:false, speed:52},
   {name:'Hydra',    shape:'serpent', main:'#3a7a4a', sec:'#8ac83a', element:'Dark',  mythic:'hydra',    ranged:true,  speed:40},
-  {name:'Centaur',  shape:'quad',    main:'#a5762e', sec:'#6a4a2a', element:'Wind',  mythic:'centaur',  ranged:true,  speed:74},
-  {name:'Medusa',   shape:'biped',   main:'#4a8a5a', sec:'#c8c83a', element:'Dark',  mythic:'medusa',   ranged:true,  speed:44},
-  {name:'Hades',    shape:'biped',   main:'#2a1a3a', sec:'#8a2ac8', element:'Dark',  mythic:'hades',    ranged:true,  speed:42},
+  {name:'Centaur',  shape:'quad',    main:'#a5762e', sec:'#6a4a2a', element:'Wind',  mythic:'centaur',  ranged:true,  speed:74, attack:'scatter'},
+  {name:'Medusa',   shape:'caster',  main:'#4a8a5a', sec:'#c8c83a', element:'Dark',  mythic:'medusa',   ranged:true,  speed:44, attack:'spiral'},
+  {name:'Hades',    shape:'wraith',  main:'#2a1a3a', sec:'#8a2ac8', element:'Dark',  mythic:'hades',    ranged:true,  speed:42, attack:'burst'},
 ];
 
 //////////////////////// STAGES (15) + THEMES ////////////////////////
@@ -1736,6 +1736,7 @@ function enemyAttack(en){
   const base = Math.atan2(player.y-en.y, player.x-en.x);
   switch(style){
     case 'triple':
+    case 'spread':
       push(base-0.28); push(base); push(base+0.28); break;
     case 'burst': {  // radial ring
       const n = en.isBoss ? 12 : 8;
@@ -1792,6 +1793,22 @@ function updateEntities(dt){
       if(en.summonCd <= 0){ en.summonCd = 6; spawnGorgon(en); spawnGorgon(en); }
     }
     const spd = en.speed * (en.rageT > 0 ? 4 : 1);
+    // Lunge: fast melee predators wind up then dash at the player
+    if(en.def.lunge && !en.def.ranged){
+      en.lungeCd = (en.lungeCd||rand(1,2.5)) - dt;
+      if(en.lungeT > 0){
+        en.lungeT -= dt;
+        en.x += Math.cos(en.lungeAng)*en.speed*3.4*dt;
+        en.y += Math.sin(en.lungeAng)*en.speed*3.4*dt;
+        if(Math.random()<0.5) particles.push({type:'trail', x:en.x, y:en.y, t:0, life:0.2, color:en.def.sec});
+      } else if(en.lungeCd<=0 && d < 260 && d > 40){
+        en.windup = (en.windup||0) + dt;
+        if(en.windup > 0.4){
+          en.lungeAng = Math.atan2(player.y-en.y, player.x-en.x);
+          en.lungeT = 0.3; en.windup = 0; en.lungeCd = rand(2,3.5);
+        }
+      } else { en.windup = 0; }
+    }
     const wantRanged = en.def.ranged && !(en.rageT > 0);
     let moveAng = Math.atan2(player.y-en.y, player.x-en.x);
     if(wantRanged){
