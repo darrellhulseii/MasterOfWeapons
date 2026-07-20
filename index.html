@@ -736,6 +736,7 @@ function endlessScale(){ return endlessMode ? 1 + endlessWave*0.18 : 1; }
 function currentQuota(){ return endlessMode ? 16 + endlessWave*2 : STAGES[stageIndex-1].quota; }
 let bossBannerT = 0, levelUpT = 0, stageBannerT = 0;
 let elapsedGlobal = 0;
+let runKills = 0, runTime = 0;
 
 function baseStats(){ return { str:5, dex:5, int:5, luk:5, vit:5 }; }
 
@@ -851,6 +852,7 @@ function resetGame(){
   player.maxMp = d.maxMp; player.mp = d.maxMp;
   selectedWeaponIdx = 0;
   endlessMode = false; endlessWave = 0; score = 0;
+  runKills = 0; runTime = 0;
   startPickIdx = 0;
   hideAllOverlays();
   buildWeaponBar();
@@ -1072,7 +1074,7 @@ function showVictory(){
   gameState = 'victory';
   MUSIC.stop();
   document.getElementById('v-stats').textContent =
-    `Level ${player.level} · ${player.gold} gold amassed · The Wyrmking has fallen.`;
+    `Level ${player.level} · ${runKills} foes slain · ${fmtTime(runTime)} · ${player.gold} gold · The Wyrmking has fallen.`;
   document.getElementById('victory').style.display = 'flex';
 }
 
@@ -1381,17 +1383,38 @@ document.getElementById('pause-music').addEventListener('click', function(){
   this.textContent = MUSIC.on ? 'MUSIC: ON' : 'MUSIC: OFF';
 });
 
-document.getElementById('char-sheet').addEventListener('click', e=>{
-  const btn = e.target.closest('.plusbtn');
-  if(!btn) return;
-  const stat = btn.dataset.stat;
+function allocStat(stat){
   if(player.unspentPoints>0){
     player.base[stat]++;
     player.unspentPoints--;
     recalcVitals();
     refreshCharSheet();
+    SFX.tone(520+player.base[stat]*4, 640, 0.05, 'square', 0.08);
+    return true;
   }
+  return false;
+}
+// Hold-to-fill: press and hold a + button to pour points in, accelerating the longer you hold.
+let holdStat = null, holdTimer = null, holdDelay = 260;
+function startHold(stat){
+  if(!allocStat(stat)) return;
+  holdStat = stat; holdDelay = 260;
+  const step = ()=>{
+    if(holdStat !== stat || !allocStat(stat)){ stopHold(); return; }
+    holdDelay = Math.max(45, holdDelay*0.82); // accelerate
+    holdTimer = setTimeout(step, holdDelay);
+  };
+  holdTimer = setTimeout(step, holdDelay);
+}
+function stopHold(){ if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; } holdStat=null; }
+document.getElementById('char-sheet').addEventListener('pointerdown', e=>{
+  const btn = e.target.closest('.plusbtn');
+  if(!btn) return;
+  e.preventDefault();
+  startHold(btn.dataset.stat);
 });
+['pointerup','pointercancel','pointerleave'].forEach(ev=>
+  document.getElementById('char-sheet').addEventListener(ev, stopHold));
 
 document.getElementById('toggle-sheet-hint').addEventListener('click', ()=>{
   const sheet = document.getElementById('char-sheet');
@@ -1488,10 +1511,12 @@ function syncHud(){
       player.specialCd > 0 ? Math.ceil(player.specialCd)+'s' : (player.mp < sp.mp ? 'MP' : '');
   }
   document.getElementById('alive-label').textContent = `Enemies Alive: ${entities.length}` + (endlessMode ? ` · Score ${score}` : '');
-  const boss = entities.find(e=>e.isBoss);
+  const boss = entities.find(e=>e.isBoss && !e.dead);
   if(boss){
     document.getElementById('boss-hpbar').style.display = 'block';
     document.getElementById('boss-fill').style.width = clamp(boss.hp/boss.maxHp*100,0,100)+'%';
+  } else {
+    document.getElementById('boss-hpbar').style.display = 'none';
   }
 }
 
@@ -1671,11 +1696,17 @@ function killEnemy(en){
     particles.push({type:'burst', x:en.x, y:en.y, t:0, life:0.4, vx:rand(-90,90), vy:rand(-90,90), color:en.def.main});
   }
   if(en.isBoss){
+    announce(`${en.def.name.toUpperCase()} DEFEATED`, '#ffd24a');
     completeStage();
   } else {
     stageKills++;
+    runKills++;
+    if(en.elite){ announce('ELITE SLAIN', '#e8c445'); }
   }
 }
+let announceText = '', announceColor = '#fff', announceT = 0;
+function announce(text, color){ announceText = text; announceColor = color; announceT = 1.8; }
+function fmtTime(s){ const m=Math.floor(s/60), ss=Math.floor(s%60); return `${m}:${ss<10?'0':''}${ss}`; }
 
 function gainExp(v){
   player.exp += v;
@@ -2507,6 +2538,8 @@ function loop(now){
 
 function update(dt){
   elapsedGlobal += dt;
+  runTime += dt;
+  if(announceT > 0) announceT -= dt;
   let mx=0,my=0;
   if(keys['w']||keys['arrowup']) my-=1;
   if(keys['s']||keys['arrowdown']) my+=1;
@@ -2559,8 +2592,8 @@ function update(dt){
     gameState = 'gameover';
     MUSIC.stop();
     document.getElementById('go-stats').textContent = endlessMode
-      ? `Fell on Wave ${endlessWave} · Score ${score} (best ${bestScore}) · Level ${player.level}`
-      : `Fell on Stage ${stageIndex} (${st.name}) · Level ${player.level} · ${player.gold} gold`;
+      ? `Fell on Wave ${endlessWave} · Score ${score} (best ${bestScore}) · ${runKills} kills · ${fmtTime(runTime)}`
+      : `Fell on Stage ${stageIndex} (${st.name}) · Lv ${player.level} · ${runKills} kills · ${fmtTime(runTime)}`;
     document.getElementById('gameover').style.display='flex';
   }
   syncHud();
@@ -2581,6 +2614,19 @@ function render(dt){
   const sEl = document.getElementById('stage-banner');
   sEl.style.opacity = stageBannerT>0 ? Math.min(1, stageBannerT*1.4) : 0;
 
+  if(announceT > 0 && gameState==='playing'){
+    const a = Math.min(1, announceT*1.5);
+    const scale = announceT > 1.5 ? 1 + (announceT-1.5)*2 : 1;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.textAlign = 'center';
+    ctx.font = `bold ${Math.round(26*scale)}px monospace`;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillText(announceText, W/2+2, H*0.28+2);
+    ctx.fillStyle = announceColor;
+    ctx.fillText(announceText, W/2, H*0.28);
+    ctx.restore();
+  }
   if(combo >= 3 && gameState==='playing'){
     const pulse = 1 + 0.08*Math.sin(performance.now()/90);
     ctx.save();
