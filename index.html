@@ -698,6 +698,12 @@ const MYTHIC_BOSSES = [
   {name:'Centaur',  shape:'quad',    main:'#a5762e', sec:'#6a4a2a', element:'Wind',  mythic:'centaur',  ranged:true,  speed:74, attack:'scatter'},
   {name:'Medusa',   shape:'caster',  main:'#4a8a5a', sec:'#c8c83a', element:'Dark',  mythic:'medusa',   ranged:true,  speed:44, attack:'spiral'},
   {name:'Hades',    shape:'wraith',  main:'#2a1a3a', sec:'#8a2ac8', element:'Dark',  mythic:'hades',    ranged:true,  speed:42, attack:'burst'},
+  // The Olympians — unlocked once you have bested Hades and looped the gauntlet
+  {name:'Ares, God of War',      shape:'god', main:'#8a2a22', sec:'#ff6a3a', element:'Fire',    mythic:'ares',      god:true, ranged:false, speed:70, lunge:true},
+  {name:'Poseidon, Earthshaker', shape:'god', main:'#1e6a8a', sec:'#5fd0ff', element:'Ice',     mythic:'poseidon',  god:true, ranged:true,  speed:46, attack:'spread'},
+  {name:'Apollo, the Radiant',   shape:'god', main:'#c8a02a', sec:'#fff0a0', element:'Holy',    mythic:'apollo',    god:true, ranged:true,  speed:52, attack:'spiral'},
+  {name:'Athena, the Strategist',shape:'god', main:'#4a6a5a', sec:'#c8d8b0', element:'Wind',    mythic:'athena',    god:true, ranged:true,  speed:60, attack:'homing'},
+  {name:'Zeus, King of Olympus', shape:'god', main:'#9a8a4a', sec:'#ffe86a', element:'Thunder', mythic:'zeus',      god:true, ranged:true,  speed:50, attack:'zeusbolt'},
 ];
 
 //////////////////////// STAGES (15) + THEMES ////////////////////////
@@ -1030,13 +1036,14 @@ function spawnFodder(){
 function spawnBoss(){
   const bdef = endlessMode ? MYTHIC_BOSSES[(endlessWave-1) % MYTHIC_BOSSES.length] : BOSS_TYPES[stageIndex-1];
   const es = endlessScale();
-  const hp = Math.round((300 + stageIndex*130)*es);
-  const atk = Math.round((15 + stageIndex*3.2)*es);
+  const godMul = bdef.god ? 1.6 : 1;
+  const hp = Math.round((300 + stageIndex*130)*es*godMul);
+  const atk = Math.round((15 + stageIndex*3.2)*es*(bdef.god?1.2:1));
   const defn = Math.round((6 + stageIndex*1.6)*es);
-  const size = 40 + stageIndex*1.6;
+  const size = (40 + stageIndex*1.6)*(bdef.god?1.25:1);
   entities.push({
     def: Object.assign({size, ranged:(bdef.shape==='flyer'||stageIndex%2===0)}, bdef),
-    summonCd: 5, rageCd: 3, rageT: 0,
+    summonCd: 5, rageCd: 3, rageT: 0, godCd: 3,
     x: W/2, y: -60, r: size*0.5,
     hp, maxHp: hp, atk, def_: defn, mdef: defn,
     expReward: Math.round(160 + stageIndex*45), goldReward: Math.round(60 + stageIndex*22),
@@ -1820,6 +1827,8 @@ function enemyAttack(en){
     }, opts.extra||{}));
   };
   const base = Math.atan2(player.y-en.y, player.x-en.x);
+  // launch flash at the enemy
+  particles.push({type:'explosion', x:en.x, y:en.y, t:0, life:0.18, color:en.def.sec});
   switch(style){
     case 'triple':
     case 'spread':
@@ -1839,6 +1848,10 @@ function enemyAttack(en){
         extra:{lob:true, burstColor:en.def.sec}}); break;
     case 'scatter': {  // wide shotgun cone
       for(let i=-3;i<=3;i++) push(base+i*0.14, {speed:spd*(0.9+Math.random()*0.3)}); break; }
+    case 'zeusbolt': {  // Zeus: a crackling storm of fast bolts in a fan + a homing bolt
+      for(let i=-3;i<=3;i++) push(base+i*0.18, {speed:spd*1.15, color:'#ffe86a', life:1.8});
+      push(base, {speed:spd*0.7, color:'#fff', life:3.5, extra:{homing:true}});
+      addShake(4,0.2); break; }
     default: push(base);
   }
 }
@@ -1847,6 +1860,10 @@ function spawnBurst(x,y,color,n,dmg,element){
     const a=i/n*Math.PI*2;
     projectiles.push({x,y,vx:Math.cos(a)*200,vy:Math.sin(a)*200,life:1.2,owner:'enemy',dmg,element,r:5,color});
   }
+}
+function push_god(en, ang, color){
+  projectiles.push({x:en.x, y:en.y, vx:Math.cos(ang)*240, vy:Math.sin(ang)*240,
+    life:2, owner:'enemy', dmg:en.atk*0.9, element:en.def.element, r:7, color});
 }
 function spawnGorgon(b){
   if(entities.filter(e=>!e.dead).length > 14) return;
@@ -1877,6 +1894,20 @@ function updateEntities(dt){
     } else if(en.def.mythic === 'hades'){
       en.summonCd -= dt;
       if(en.summonCd <= 0){ en.summonCd = 6; spawnGorgon(en); spawnGorgon(en); }
+    } else if(en.def.god){
+      // every god periodically unleashes a signature divine burst
+      en.godCd = (en.godCd||3) - dt;
+      if(en.godCd <= 0){
+        en.godCd = rand(3.5, 5);
+        SFX.boss(); addShake(6,0.35);
+        particles.push({type:'explosion', x:en.x, y:en.y, t:0, life:0.6, color:en.def.sec});
+        if(en.def.mythic==='ares'){ en.rageT = 1.6; }                                  // War: berserk charge
+        else if(en.def.mythic==='poseidon'){ spawnBurst(en.x,en.y,en.def.sec,14,en.atk*0.8,'Ice'); } // Earthshaker ring
+        else if(en.def.mythic==='apollo'){ for(let k=0;k<10;k++) push_god(en, k/10*Math.PI*2,'#fff0a0'); } // Radiant nova
+        else if(en.def.mythic==='athena'){ enemyAttack(en); enemyAttack(en); }         // Strategist double volley
+        else if(en.def.mythic==='zeus'){ spawnBurst(en.x,en.y,'#ffe86a',16,en.atk,'Thunder'); } // Thunderstorm
+      }
+      if(en.rageT > 0) en.rageT -= dt;
     }
     const spd = en.speed * (en.rageT > 0 ? 4 : 1);
     // Lunge: fast melee predators wind up then dash at the player
@@ -1939,7 +1970,9 @@ function updateProjectiles(dt){
       const turn = Math.sign(diff)*Math.min(Math.abs(diff), 2.4*dt);
       const na = cur+turn, sp = Math.hypot(p.vx,p.vy);
       p.vx = Math.cos(na)*sp; p.vy = Math.sin(na)*sp;
-      if(Math.random()<0.6) particles.push({type:'trail', x:p.x, y:p.y, t:0, life:0.3, color:p.color||'#c46bff'});
+    }
+    if(p.owner==='enemy' && Math.random()<0.28){
+      particles.push({type:'trail', x:p.x, y:p.y, t:0, life:0.18, color:p.color||'#c46bff'});
     }
     p.x += p.vx*dt; p.y += p.vy*dt; p.life -= dt;
     if(p.owner==='player' && Math.random() < 0.5){
@@ -1994,6 +2027,9 @@ function updateProjectiles(dt){
         if(p.gaze){ player.slowT = 1.4; spawnFloatingText(player.x, player.y-38, 'PETRIFYING GAZE', '#c8c83a', false); }
         player.hp -= hasRelic('ward') ? dmg*0.85 : dmg; player.hurtFlash=0.2; player.invuln=0.4; SFX.hurt();
         spawnFloatingText(player.x, player.y-24, Math.round(dmg), '#ff6b6b', false);
+        particles.push({type:'explosion', x:p.x, y:p.y, t:0, life:0.22, color:p.color||'#ff6b6b'});
+        for(let i=0;i<5;i++){ const a=Math.random()*Math.PI*2;
+          particles.push({type:'shard', x:p.x, y:p.y, t:0, life:rand(0.25,0.45), vx:Math.cos(a)*rand(60,160), vy:Math.sin(a)*rand(60,160)-40, color:p.color||'#ff6b6b'}); }
         p.life = 0;
       }
     }
@@ -2463,6 +2499,32 @@ function drawCreature(en){
       ctx.globalAlpha = orbP; ctx.fillStyle = og;
       ctx.beginPath(); ctx.arc(s*0.7,-s*0.2,s*0.35,0,Math.PI*2); ctx.fill(); ctx.globalAlpha = 1;
       break; }
+    case 'god': {  // towering robed Olympian with a radiant halo and aura
+      // aura
+      const aura = ctx.createRadialGradient(0,-s*0.2,s*0.3, 0,-s*0.2, s*1.5);
+      aura.addColorStop(0, sec); aura.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.globalAlpha = 0.28 + 0.1*Math.sin(en.animT*3); ctx.fillStyle = aura;
+      ctx.beginPath(); ctx.arc(0,-s*0.2, s*1.5, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+      // flowing robe (trapezoid)
+      ctx.fillStyle = main;
+      ctx.beginPath(); ctx.moveTo(-s*0.55,-s*0.4); ctx.lineTo(s*0.55,-s*0.4); ctx.lineTo(s*0.8,s*0.9); ctx.lineTo(-s*0.8,s*0.9); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = darken(main,18);
+      ctx.beginPath(); ctx.moveTo(0,-s*0.4); ctx.lineTo(s*0.55,-s*0.4); ctx.lineTo(s*0.8,s*0.9); ctx.lineTo(0,s*0.9); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = sec; ctx.fillRect(-s*0.8,s*0.78,s*1.6,s*0.14); // gold hem
+      // broad shoulders / chest
+      ctx.fillStyle = lighten(main,15); ctx.fillRect(-s*0.6,-s*0.45,s*1.2,s*0.28);
+      // head
+      ctx.fillStyle = '#e8c9a0'; ctx.beginPath(); ctx.arc(0,-s*0.62,s*0.26,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#e8e8e8'; ctx.fillRect(-s*0.26,-s*0.5,s*0.52,s*0.16); // beard
+      // radiant laurel halo
+      ctx.strokeStyle = sec; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(0,-s*0.62, s*0.4, 0, Math.PI*2); ctx.stroke();
+      for(let i=0;i<10;i++){ const a=i/10*Math.PI*2 + en.animT*0.6;
+        ctx.beginPath(); ctx.moveTo(Math.cos(a)*s*0.42,-s*0.62+Math.sin(a)*s*0.42);
+        ctx.lineTo(Math.cos(a)*s*0.56,-s*0.62+Math.sin(a)*s*0.56); ctx.stroke(); }
+      ctx.fillStyle = sec; ctx.fillRect(-s*0.08,-s*0.68,s*0.16,s*0.1); // glowing eyes
+      break; }
     case 'hound': {  // low, fast quadruped predator
       ctx.fillStyle = darken(main,20);
       ctx.fillRect(-s*0.6,s*0.2,s*0.18,s*0.4); ctx.fillRect(-s*0.3,s*0.2,s*0.18,s*0.4);
@@ -2565,13 +2627,54 @@ function drawProjectiles(){
       } else if(p.gaze){ // petrifying eye
         ctx.fillStyle='#e8e8c0'; ctx.beginPath(); ctx.ellipse(0,0,r*1.2,r*0.8,ang,0,Math.PI*2); ctx.fill();
         ctx.fillStyle='#3a1a3a'; ctx.beginPath(); ctx.arc(0,0,r*0.5,0,Math.PI*2); ctx.fill();
-      } else { // spiked shot
-        ctx.rotate(now*10);
-        ctx.fillStyle=col;
-        ctx.beginPath();
-        for(let i=0;i<8;i++){ const a=i/8*Math.PI*2, rr=i%2?r:r*1.6; ctx.lineTo(Math.cos(a)*rr,Math.sin(a)*rr); }
-        ctx.closePath(); ctx.fill();
-        ctx.fillStyle=lighten(col,50); ctx.beginPath(); ctx.arc(0,0,r*0.5,0,Math.PI*2); ctx.fill();
+      } else { // regular shot — styled by element so blasts read distinctly
+        const el = p.element || 'Neutral';
+        if(el==='Fire'){
+          ctx.rotate(now*6);
+          for(let i=0;i<3;i++){ const a=i/3*Math.PI*2+now*8;
+            ctx.fillStyle = i? '#e0521a':'#ffcf4a';
+            ctx.beginPath(); ctx.arc(Math.cos(a)*r*0.5, Math.sin(a)*r*0.5, r*0.8, 0, Math.PI*2); ctx.fill(); }
+          ctx.fillStyle='#fff4c8'; ctx.beginPath(); ctx.arc(0,0,r*0.6,0,Math.PI*2); ctx.fill();
+        } else if(el==='Ice'){
+          ctx.rotate(now*3);
+          ctx.fillStyle=col; ctx.beginPath();
+          for(let i=0;i<6;i++){ const a=i/6*Math.PI*2, rr=i%2?r*0.5:r*1.5; ctx.lineTo(Math.cos(a)*rr,Math.sin(a)*rr); }
+          ctx.closePath(); ctx.fill();
+          ctx.fillStyle='#eaffff'; ctx.beginPath(); ctx.arc(0,0,r*0.4,0,Math.PI*2); ctx.fill();
+        } else if(el==='Thunder'){
+          ctx.rotate(ang);
+          ctx.strokeStyle=lighten(col,40); ctx.lineWidth=2.4; ctx.lineJoin='round';
+          ctx.beginPath(); ctx.moveTo(-r*1.4,0);
+          for(let i=-1.4;i<=1.4;i+=0.7) ctx.lineTo(i*r,(Math.random()-0.5)*r*1.6);
+          ctx.stroke();
+          ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(0,0,r*0.5,0,Math.PI*2); ctx.fill();
+        } else if(el==='Wind'){
+          ctx.rotate(ang+now*14);
+          ctx.strokeStyle=lighten(col,30); ctx.lineWidth=r*0.7; ctx.lineCap='round';
+          ctx.beginPath(); ctx.arc(0,0,r,-0.9,0.9); ctx.stroke(); // crescent slash
+        } else if(el==='Earth'){
+          ctx.rotate(now*4);
+          ctx.fillStyle=col; ctx.beginPath();
+          for(let i=0;i<5;i++){ const a=i/5*Math.PI*2, rr=r*(0.8+((i*97)%10)/14); ctx.lineTo(Math.cos(a)*rr,Math.sin(a)*rr); }
+          ctx.closePath(); ctx.fill();
+          ctx.fillStyle=darken(col,20); ctx.beginPath(); ctx.arc(r*0.2,r*0.2,r*0.3,0,Math.PI*2); ctx.fill();
+        } else if(el==='Dark'){
+          ctx.fillStyle=darken(col,10); ctx.beginPath(); ctx.arc(0,0,r*1.1,0,Math.PI*2); ctx.fill();
+          ctx.globalAlpha=0.5; ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(0,0,r*0.55,0,Math.PI*2); ctx.fill();
+          ctx.globalAlpha=1; ctx.fillStyle=lighten(col,60); ctx.beginPath(); ctx.arc(-r*0.3,-r*0.3,r*0.25,0,Math.PI*2); ctx.fill();
+        } else if(el==='Holy'){
+          ctx.rotate(now*2);
+          ctx.fillStyle='#fff6c0';
+          for(let i=0;i<4;i++){ const a=i/4*Math.PI*2; ctx.save(); ctx.rotate(a);
+            ctx.beginPath(); ctx.moveTo(0,-r*1.6); ctx.lineTo(r*0.4,0); ctx.lineTo(0,r*1.6); ctx.lineTo(-r*0.4,0); ctx.closePath(); ctx.fill(); ctx.restore(); }
+          ctx.fillStyle=col; ctx.beginPath(); ctx.arc(0,0,r*0.5,0,Math.PI*2); ctx.fill();
+        } else { // Neutral: spinning spiked bolt
+          ctx.rotate(now*10);
+          ctx.fillStyle=col; ctx.beginPath();
+          for(let i=0;i<8;i++){ const a=i/8*Math.PI*2, rr=i%2?r:r*1.6; ctx.lineTo(Math.cos(a)*rr,Math.sin(a)*rr); }
+          ctx.closePath(); ctx.fill();
+          ctx.fillStyle=lighten(col,50); ctx.beginPath(); ctx.arc(0,0,r*0.5,0,Math.PI*2); ctx.fill();
+        }
       }
     }
     ctx.restore();
@@ -2618,6 +2721,7 @@ function drawParticles(dt){
     ctx.restore();
   });
   particles = particles.filter(p=> p.t < p.life);
+  if(particles.length > 260) particles.splice(0, particles.length - 260);
 }
 
 function drawFloatingTexts(dt){
